@@ -4,8 +4,8 @@
 Gazi University, Department of Computer Engineering — Spring 2026
 
 **Team:**
-- XXX – Muhammed Cakirgoz
-- XXX – Musa Bilal Yaz
+-  Muhammed Çakırgöz
+-  Musa Bilal Yaz
 
 ---
 
