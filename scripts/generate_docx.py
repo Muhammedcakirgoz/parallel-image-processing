@@ -731,7 +731,111 @@ def fill_slide_cell(cell, number, title, items, note):
 
 
 # ---------------------------------------------------------------------------
-# Slides  —  all 10 on ONE page in a 2-column grid
+# Full-page slide content
+# ---------------------------------------------------------------------------
+def _fill_slide_full(cell, number, title, items, note):
+    """Write a full-page slide into a Word table cell."""
+
+    for para in list(cell.paragraphs):
+        para._p.getparent().remove(para._p)
+
+    def cp(text, size, bold=False, italic=False, color=C_WHITE,
+           bg="1a3a6b", align=WD_ALIGN_PARAGRAPH.LEFT, indent=0, space_after=0):
+        p = cell.add_paragraph()
+        p.alignment = align
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(space_after)
+        if indent:
+            p.paragraph_format.left_indent = Cm(indent)
+        paragraph_shade(p, bg)
+        if text:
+            r = p.add_run(text)
+            set_run_font(r, size, bold=bold, italic=italic, color=color)
+        return p
+
+    # top gold bar
+    p = cell.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after  = Pt(0)
+    paragraph_shade(p, "F0C040")
+    r = p.add_run(f"  CENG 479 — Parallel Computing  |  Slide {number} / 10  ")
+    set_run_font(r, 9, bold=True, color=C_BLUE)
+
+    # spacer
+    cp("", 6, bg="1a3a6b")
+
+    # slide number badge + title
+    p = cell.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after  = Pt(4)
+    paragraph_shade(p, "0d2244")
+    badge = p.add_run(f"  {number}  ")
+    set_run_font(badge, 14, bold=True, color=C_GOLD)
+    t = p.add_run(f"   {title}")
+    set_run_font(t, 16, bold=True, color=C_WHITE)
+
+    # gold divider line
+    p = cell.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after  = Pt(6)
+    paragraph_shade(p, "1a3a6b")
+    set_para_border_bottom(p, "F0C040", "12")
+
+    # items
+    for kind, text in items:
+        if kind == "bullet":
+            p = cell.add_paragraph()
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after  = Pt(4)
+            p.paragraph_format.left_indent  = Cm(1.2)
+            paragraph_shade(p, "1a3a6b")
+            dot = p.add_run("●  ")
+            set_run_font(dot, 11, color=C_GOLD)
+            r = p.add_run(text)
+            set_run_font(r, 11, color=C_WHITE)
+        elif kind == "sub":
+            p = cell.add_paragraph()
+            p.paragraph_format.space_before = Pt(6)
+            p.paragraph_format.space_after  = Pt(2)
+            p.paragraph_format.left_indent  = Cm(0.6)
+            paragraph_shade(p, "1a3a6b")
+            r = p.add_run(text)
+            set_run_font(r, 11, bold=True, color=C_GOLD)
+        elif kind == "body":
+            p = cell.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(4)
+            p.paragraph_format.space_after  = Pt(4)
+            paragraph_shade(p, "1a3a6b")
+            r = p.add_run(text)
+            set_run_font(r, 10, italic=True, color=RGBColor(0xaa, 0xcc, 0xee))
+        elif kind == "space":
+            cp("", 8, bg="1a3a6b", space_after=4)
+
+    # push note to bottom with spacer
+    cp("", 6, bg="1a3a6b", space_after=8)
+
+    # note bar at bottom
+    if note:
+        p = cell.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
+        paragraph_shade(p, "0d2244")
+        r = p.add_run(f"  {note}  ")
+        set_run_font(r, 9, italic=True, color=C_GOLD)
+
+    # bottom gold bar
+    p = cell.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after  = Pt(0)
+    paragraph_shade(p, "F0C040")
+    r = p.add_run(f"  June 2026  —  Gazi University  |  Computer Engineering  ")
+    set_run_font(r, 9, bold=True, color=C_BLUE)
+
+
+# ---------------------------------------------------------------------------
+# Slides  —  each slide on its own page
 # ---------------------------------------------------------------------------
 def build_slides(doc):
     doc.add_page_break()
@@ -833,29 +937,18 @@ def build_slides(doc):
         ], GITHUB),
     ]
 
-    # 2-column grid: 5 rows x 2 cols — all 10 slides on one page
-    col_w = Cm(7.8)
-    tbl = doc.add_table(rows=5, cols=2)
-    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    tbl.style = "Table Grid"
-
-    for i, (number, title, items, note) in enumerate(slides):
-        row_idx = i // 2
-        col_idx = i % 2
-        cell = tbl.cell(row_idx, col_idx)
-        cell.width = col_w
-        # remove grid border between cells for cleaner look
+    # Her slayt ayrı sayfada, tam sayfa tablo
+    for number, title, items, note in slides:
+        tbl = doc.add_table(rows=1, cols=1)
+        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tbl.style = "Table Grid"
+        cell = tbl.cell(0, 0)
+        cell.width = Cm(16.0)
         set_cell_bg(cell, "1a3a6b")
-        fill_slide_cell(cell, number, title, items, note)
-
-    # set column widths and row heights
-    for row in tbl.rows:
-        row.height = Cm(4.5)
-        for cell in row.cells:
-            cell.width = col_w
-
-    # thin border between cells
-    set_cell_borders(tbl, color_hex="2e6db4")
+        _fill_slide_full(cell, number, title, items, note)
+        set_cell_borders(tbl, color_hex="2e6db4")
+        if number < len(slides):
+            doc.add_page_break()
 
 
 # ---------------------------------------------------------------------------
