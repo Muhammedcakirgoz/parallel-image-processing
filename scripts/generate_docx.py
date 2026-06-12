@@ -651,12 +651,92 @@ def build_report(doc, rows):
 
 
 # ---------------------------------------------------------------------------
-# Slides
+# Helper: write slide content into a table cell
+# ---------------------------------------------------------------------------
+def fill_slide_cell(cell, number, title, items, note):
+    """Write a compact slide into a Word table cell."""
+
+    def cp(text, size, bold=False, italic=False, color=C_WHITE,
+           bg="1a3a6b", align=WD_ALIGN_PARAGRAPH.LEFT, indent=0):
+        p = cell.add_paragraph()
+        p.alignment = align
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
+        if indent:
+            p.paragraph_format.left_indent = Cm(indent)
+        paragraph_shade(p, bg)
+        if text:
+            r = p.add_run(text)
+            set_run_font(r, size, bold=bold, italic=italic, color=color)
+        return p
+
+    # clear default empty paragraph that Word adds
+    for para in list(cell.paragraphs):
+        p = para._p
+        p.getparent().remove(p)
+
+    # title bar
+    p = cell.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after  = Pt(0)
+    paragraph_shade(p, "0d2244")
+    badge = p.add_run(f" {number} ")
+    set_run_font(badge, 7, bold=True, color=C_GOLD)
+    t = p.add_run(f"  {title}")
+    set_run_font(t, 8, bold=True, color=C_WHITE)
+
+    # items
+    for kind, text in items:
+        if kind == "bullet":
+            p = cell.add_paragraph()
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after  = Pt(0)
+            p.paragraph_format.left_indent  = Cm(0.4)
+            paragraph_shade(p, "1a3a6b")
+            dot = p.add_run("• ")
+            set_run_font(dot, 7.5, color=C_GOLD)
+            r = p.add_run(text)
+            set_run_font(r, 7.5, color=C_WHITE)
+        elif kind == "sub":
+            p = cell.add_paragraph()
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after  = Pt(0)
+            p.paragraph_format.left_indent  = Cm(0.2)
+            paragraph_shade(p, "1a3a6b")
+            r = p.add_run(text)
+            set_run_font(r, 7.5, bold=True, color=C_GOLD)
+        elif kind == "body":
+            p = cell.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after  = Pt(0)
+            paragraph_shade(p, "1a3a6b")
+            r = p.add_run(text)
+            set_run_font(r, 7, italic=True, color=RGBColor(0xaa, 0xcc, 0xee))
+        elif kind == "space":
+            p = cell.add_paragraph()
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after  = Pt(1)
+            paragraph_shade(p, "1a3a6b")
+
+    # note bar
+    if note:
+        p = cell.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
+        paragraph_shade(p, "0d2244")
+        r = p.add_run(f" {note} ")
+        set_run_font(r, 6.5, italic=True, color=C_GOLD)
+
+
+# ---------------------------------------------------------------------------
+# Slides  —  all 10 on ONE page in a 2-column grid
 # ---------------------------------------------------------------------------
 def build_slides(doc):
     doc.add_page_break()
     add_heading(doc, "PRESENTATION SLIDES  (10 Slides)", size=13)
-    add_spacer(doc, 4)
+    add_spacer(doc, 2)
 
     slides = [
         (1, "Parallel Image Processing Engine", [
@@ -753,8 +833,29 @@ def build_slides(doc):
         ], GITHUB),
     ]
 
-    for number, title, items, note in slides:
-        add_slide(doc, number, title, items, note)
+    # 2-column grid: 5 rows x 2 cols — all 10 slides on one page
+    col_w = Cm(7.8)
+    tbl = doc.add_table(rows=5, cols=2)
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl.style = "Table Grid"
+
+    for i, (number, title, items, note) in enumerate(slides):
+        row_idx = i // 2
+        col_idx = i % 2
+        cell = tbl.cell(row_idx, col_idx)
+        cell.width = col_w
+        # remove grid border between cells for cleaner look
+        set_cell_bg(cell, "1a3a6b")
+        fill_slide_cell(cell, number, title, items, note)
+
+    # set column widths and row heights
+    for row in tbl.rows:
+        row.height = Cm(4.5)
+        for cell in row.cells:
+            cell.width = col_w
+
+    # thin border between cells
+    set_cell_borders(tbl, color_hex="2e6db4")
 
 
 # ---------------------------------------------------------------------------
