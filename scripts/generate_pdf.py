@@ -1,5 +1,5 @@
 """
-generate_pdf.py  —  CENG 479 Sub2 Final Report + Presentation (single PDF)
+generate_pdf.py  -  CENG 479 Sub2 Final Report + Presentation (single PDF)
 Usage: python scripts/generate_pdf.py
 Output: CENG479_Sub2_Final_Report.pdf
 """
@@ -9,631 +9,739 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import cm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    PageBreak, HRFlowable, Image, KeepTogether
+    PageBreak, HRFlowable, Image, KeepTogether, BaseDocTemplate,
+    Frame, PageTemplate
 )
-from reportlab.platypus.flowables import HRFlowable
+from reportlab.pdfgen import canvas as pdfcanvas
+from reportlab.platypus.flowables import Flowable
 
-# ── colours ──────────────────────────────────────────────────────────────────
-BLUE      = colors.HexColor("#1a3a6b")
-BLUE_LIGHT= colors.HexColor("#2e6db4")
-GRAY      = colors.HexColor("#555555")
-GRAY_LITE = colors.HexColor("#f4f4f4")
-ACCENT    = colors.HexColor("#e8f0fc")
-WHITE     = colors.white
-BLACK     = colors.black
-GREEN     = colors.HexColor("#1a7a3a")
-SLIDE_BG  = colors.HexColor("#1a3a6b")
-SLIDE_ACC = colors.HexColor("#f0c040")
+PAGE_W, PAGE_H = A4
 
-GITHUB    = "https://github.com/Muhammedcakirgoz/parallel-image-processing"
+BLUE       = colors.HexColor("#1a3a6b")
+BLUE_MID   = colors.HexColor("#2e6db4")
+BLUE_LIGHT = colors.HexColor("#d6e4f7")
+GOLD       = colors.HexColor("#f0c040")
+GRAY_D     = colors.HexColor("#444444")
+GRAY_L     = colors.HexColor("#f5f5f5")
+GREEN_D    = colors.HexColor("#1a6b3a")
+WHITE      = colors.white
+BLACK      = colors.black
+ACCENT_ROW = colors.HexColor("#eaf1fb")
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+GITHUB = "https://github.com/Muhammedcakirgoz/parallel-image-processing"
+BASE   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def img(name, w, h=None):
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def imgf(name, width, max_height=None):
     path = os.path.join(BASE, name)
     if not os.path.exists(path):
-        return Spacer(1, 0.3*cm)
-    i = Image(path, width=w)
-    if h:
-        i.drawHeight = h
-    return i
+        return Spacer(1, 0.5*cm)
+    im = Image(path)
+    ratio = im.imageHeight / im.imageWidth
+    h = width * ratio
+    if max_height and h > max_height:
+        h = max_height
+        width = h / ratio
+    im.drawWidth  = width
+    im.drawHeight = h
+    return im
 
-# ── styles ────────────────────────────────────────────────────────────────────
-def make_styles():
-    s = getSampleStyleSheet()
 
-    def add(name, **kw):
-        s.add(ParagraphStyle(name=name, **kw))
-
-    add("CoverTitle",   fontName="Helvetica-Bold", fontSize=24,
-        textColor=WHITE,  alignment=TA_CENTER, spaceAfter=8)
-    add("CoverSub",     fontName="Helvetica",      fontSize=13,
-        textColor=ACCENT, alignment=TA_CENTER, spaceAfter=4)
-    add("CoverSmall",   fontName="Helvetica",      fontSize=10,
-        textColor=ACCENT, alignment=TA_CENTER, spaceAfter=3)
-    add("CoverLink",    fontName="Helvetica-Bold", fontSize=10,
-        textColor=SLIDE_ACC, alignment=TA_CENTER, spaceAfter=4)
-
-    add("SecHeader",    fontName="Helvetica-Bold", fontSize=14,
-        textColor=BLUE,   spaceBefore=14, spaceAfter=4,
-        borderPad=2)
-    add("SubHeader",    fontName="Helvetica-Bold", fontSize=11,
-        textColor=BLUE_LIGHT, spaceBefore=8, spaceAfter=3)
-    add("Body",         fontName="Helvetica",      fontSize=9.5,
-        textColor=BLACK,  alignment=TA_JUSTIFY, leading=14, spaceAfter=5)
-    add("BulletBody",   fontName="Helvetica",      fontSize=9.5,
-        textColor=BLACK,  leftIndent=14, bulletIndent=4,
-        leading=13, spaceAfter=3)
-    add("Caption",      fontName="Helvetica-Oblique", fontSize=8,
-        textColor=GRAY,   alignment=TA_CENTER, spaceAfter=6)
-    add("CodeBlock",    fontName="Courier",        fontSize=8.5,
-        textColor=colors.HexColor("#1a1a6e"), backColor=GRAY_LITE,
-        leading=12, spaceAfter=4, leftIndent=8)
-
-    # slide styles
-    add("SlideTitle",   fontName="Helvetica-Bold", fontSize=18,
-        textColor=WHITE,  alignment=TA_CENTER, spaceAfter=6)
-    add("SlideSubTitle",fontName="Helvetica-Bold", fontSize=12,
-        textColor=SLIDE_ACC, alignment=TA_CENTER, spaceAfter=4)
-    add("SlideBullet",  fontName="Helvetica",      fontSize=10,
-        textColor=WHITE,  leftIndent=16, bulletIndent=4,
-        leading=15, spaceAfter=4)
-    add("SlideBody",    fontName="Helvetica",      fontSize=10,
-        textColor=WHITE,  alignment=TA_CENTER, leading=14, spaceAfter=4)
-    add("SlideNote",    fontName="Helvetica-Oblique", fontSize=8.5,
-        textColor=SLIDE_ACC, alignment=TA_CENTER, spaceAfter=2)
-
-    return s
-
-# ── helpers ───────────────────────────────────────────────────────────────────
-def section(title, s):
-    return [
-        HRFlowable(width="100%", thickness=1.5, color=BLUE, spaceAfter=2),
-        Paragraph(title, s["SecHeader"]),
-    ]
-
-def sub(title, s):
-    return Paragraph(title, s["SubHeader"])
-
-def body(text, s):
-    return Paragraph(text, s["Body"])
-
-def bullet(text, s):
-    return Paragraph(f"• &nbsp; {text}", s["BulletBody"])
-
-def code(text, s):
-    return Paragraph(text.replace("\n", "<br/>").replace(" ", "&nbsp;"), s["Code"])
-
-def tbl(data, col_widths, header_bg=BLUE, row_bg=ACCENT):
-    t = Table(data, colWidths=col_widths)
-    style = TableStyle([
-        ("BACKGROUND",  (0,0), (-1,0),  header_bg),
-        ("TEXTCOLOR",   (0,0), (-1,0),  WHITE),
-        ("FONTNAME",    (0,0), (-1,0),  "Helvetica-Bold"),
-        ("FONTSIZE",    (0,0), (-1,0),  8.5),
-        ("ALIGN",       (0,0), (-1,-1), "CENTER"),
-        ("VALIGN",      (0,0), (-1,-1), "MIDDLE"),
-        ("ROWBACKGROUNDS",(0,1),(-1,-1),[WHITE, ACCENT]),
-        ("FONTNAME",    (0,1), (-1,-1), "Helvetica"),
-        ("FONTSIZE",    (0,1), (-1,-1), 8),
-        ("GRID",        (0,0), (-1,-1), 0.4, colors.HexColor("#cccccc")),
-        ("ROWHEIGHT",   (0,0), (-1,-1), 14),
-        ("TOPPADDING",  (0,0), (-1,-1), 3),
-        ("BOTTOMPADDING",(0,0),(-1,-1), 3),
-    ])
-    t.setStyle(style)
-    return t
-
-# ── speedup data ──────────────────────────────────────────────────────────────
 def load_speedup():
     path = os.path.join(BASE, "speedup_table.csv")
     rows = []
-    with open(path, newline="") as f:
+    with open(path, newline="", encoding="utf-8") as f:
         for r in csv.DictReader(f):
             rows.append(r)
     return rows
 
-# ── COVER PAGE ────────────────────────────────────────────────────────────────
-def cover_page(s):
-    W, H = A4
-    elems = []
 
-    # blue banner
-    banner = Table([[""]], colWidths=[W - 4*cm], rowHeights=[3.5*cm])
-    banner.setStyle(TableStyle([
-        ("BACKGROUND", (0,0),(0,0), BLUE),
-        ("ROUNDEDCORNERS", [6,6,6,6]),
-    ]))
+# ---------------------------------------------------------------------------
+# Styles
+# ---------------------------------------------------------------------------
+def make_styles():
+    base = getSampleStyleSheet()
+    existing = set(base.byName.keys())
 
-    # cover table (full-width blue box)
-    cover_data = [[
-        Paragraph("CENG 479 — Parallel Computing", s["CoverSub"]),
-    ],[
-        Paragraph("Parallel Image Processing Engine", s["CoverTitle"]),
-    ],[
-        Paragraph("Final Implementation Report &amp; Presentation", s["CoverSub"]),
-    ],[
-        Paragraph("Gazi University · Department of Computer Engineering · Spring 2026", s["CoverSmall"]),
-    ],[
+    def add(name, **kw):
+        if name not in existing:
+            base.add(ParagraphStyle(name=name, **kw))
+
+    # report body
+    add("RTitle",   fontName="Helvetica-Bold", fontSize=16, textColor=BLUE,
+        alignment=TA_CENTER, spaceAfter=4, spaceBefore=2)
+    add("RSec",     fontName="Helvetica-Bold", fontSize=12, textColor=BLUE,
+        spaceBefore=12, spaceAfter=3)
+    add("RSubSec",  fontName="Helvetica-Bold", fontSize=10, textColor=BLUE_MID,
+        spaceBefore=6, spaceAfter=2)
+    add("RBody",    fontName="Helvetica",      fontSize=9,  textColor=BLACK,
+        alignment=TA_JUSTIFY, leading=13.5, spaceAfter=4)
+    add("RBullet",  fontName="Helvetica",      fontSize=9,  textColor=BLACK,
+        leftIndent=12, bulletIndent=2, leading=13, spaceAfter=2)
+    add("RCaption", fontName="Helvetica-Oblique", fontSize=8, textColor=GRAY_D,
+        alignment=TA_CENTER, spaceAfter=6, spaceBefore=2)
+    add("RSmall",   fontName="Helvetica",      fontSize=8,  textColor=GRAY_D,
+        spaceAfter=2)
+
+    # slide styles
+    add("STitle",   fontName="Helvetica-Bold", fontSize=15, textColor=WHITE,
+        alignment=TA_CENTER, spaceAfter=6, spaceBefore=2)
+    add("SHead",    fontName="Helvetica-Bold", fontSize=11, textColor=GOLD,
+        alignment=TA_LEFT,   spaceAfter=4, spaceBefore=2)
+    add("SBullet",  fontName="Helvetica",      fontSize=9.5,textColor=WHITE,
+        leftIndent=14, bulletIndent=2, leading=14, spaceAfter=3)
+    add("SNote",    fontName="Helvetica-Oblique", fontSize=8, textColor=GOLD,
+        alignment=TA_CENTER, spaceAfter=2)
+    add("SBody",    fontName="Helvetica",      fontSize=9,  textColor=WHITE,
+        alignment=TA_CENTER, leading=13, spaceAfter=3)
+
+    return base
+
+
+# ---------------------------------------------------------------------------
+# Cover page drawn with canvas (full control)
+# ---------------------------------------------------------------------------
+class CoverPage(Flowable):
+    def __init__(self):
+        Flowable.__init__(self)
+        self.width  = PAGE_W - 4*cm
+        self.height = PAGE_H - 4*cm
+
+    def draw(self):
+        c = self.canv
+        W = self.width
+        H = self.height
+
+        # full blue background
+        c.setFillColor(BLUE)
+        c.roundRect(0, 0, W, H, 10, fill=1, stroke=0)
+
+        # gold top bar
+        c.setFillColor(GOLD)
+        c.roundRect(0, H - 1.8*cm, W, 1.8*cm, 10, fill=1, stroke=0)
+        c.setFillColor(BLUE)
+        c.rect(0, H - 1.8*cm, W, 0.9*cm, fill=1, stroke=0)
+
+        # top bar text
+        c.setFillColor(BLUE)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawCentredString(W/2, H - 1.25*cm, "CENG 479 -- Parallel Computing  |  Gazi University  |  Spring 2026")
+
+        # main title
+        c.setFillColor(WHITE)
+        c.setFont("Helvetica-Bold", 22)
+        c.drawCentredString(W/2, H - 3.8*cm, "Parallel Image Processing Engine")
+
+        c.setFont("Helvetica", 13)
+        c.setFillColor(GOLD)
+        c.drawCentredString(W/2, H - 4.8*cm, "Final Implementation Report & Presentation")
+
+        # divider
+        c.setStrokeColor(GOLD)
+        c.setLineWidth(1.5)
+        c.line(1.5*cm, H - 5.4*cm, W - 1.5*cm, H - 5.4*cm)
+
+        # tech badges
+        badges = ["Java 17", "Maven 3.6+", "JMH", "ExecutorService", "ForkJoinPool"]
+        bw, bh, gap = 3.2*cm, 0.55*cm, 0.25*cm
+        total = len(badges)*bw + (len(badges)-1)*gap
+        bx = (W - total) / 2
+        by = H - 6.6*cm
+        c.setFont("Helvetica-Bold", 8)
+        for b in badges:
+            c.setFillColor(BLUE_MID)
+            c.roundRect(bx, by, bw, bh, 4, fill=1, stroke=0)
+            c.setFillColor(WHITE)
+            c.drawCentredString(bx + bw/2, by + 0.15*cm, b)
+            bx += bw + gap
+
+        # filters section
+        c.setFillColor(WHITE)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(W/2, H - 7.8*cm, "Filters Implemented")
+        filters = [
+            ("Grayscale",        "Point-wise  --  Low compute"),
+            ("Gaussian Blur 5x5","Convolution  --  High compute (25 taps/pixel)"),
+            ("Sobel 3x3",        "Gradient  --  Edge detection"),
+        ]
+        fy = H - 8.6*cm
+        c.setFont("Helvetica", 9)
+        for fname, fdesc in filters:
+            c.setFillColor(GOLD)
+            c.circle(1.6*cm, fy + 0.1*cm, 0.07*cm, fill=1, stroke=0)
+            c.setFillColor(WHITE)
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(1.9*cm, fy, fname)
+            c.setFont("Helvetica", 9)
+            c.setFillColor(colors.HexColor("#aaccee"))
+            c.drawString(1.9*cm + 3.8*cm, fy, fdesc)
+            fy -= 0.65*cm
+
+        # team section
+        c.setFillColor(colors.HexColor("#0d2244"))
+        c.roundRect(1.2*cm, H - 13.2*cm, W - 2.4*cm, 2.8*cm, 6, fill=1, stroke=0)
+        c.setFillColor(GOLD)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(W/2, H - 11.2*cm, "Team Members")
+        c.setFillColor(WHITE)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawCentredString(W/2, H - 12.0*cm, "Muhammed Cakiagoz   .   Musa Bilal Yaz")
+        c.setFont("Helvetica", 9)
+        c.setFillColor(colors.HexColor("#aaccee"))
+        c.drawCentredString(W/2, H - 12.6*cm, "Gazi University  --  Computer Engineering  --  Submission 2")
+
+        # github box
+        c.setFillColor(colors.HexColor("#0d2244"))
+        c.roundRect(1.2*cm, H - 16.2*cm, W - 2.4*cm, 2.4*cm, 6, fill=1, stroke=0)
+        c.setFillColor(GOLD)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(W/2, H - 14.6*cm, "GitHub Repository (Public)")
+        c.setFillColor(WHITE)
+        c.setFont("Helvetica", 9)
+        c.drawCentredString(W/2, H - 15.3*cm, GITHUB)
+        c.setFillColor(colors.HexColor("#aaccee"))
+        c.setFont("Helvetica-Oblique", 8)
+        c.drawCentredString(W/2, H - 15.9*cm, "Source code, benchmarks, and all report assets are available at the link above")
+
+        # bottom bar
+        c.setFillColor(GOLD)
+        c.roundRect(0, 0, W, 1.2*cm, 10, fill=1, stroke=0)
+        c.setFillColor(BLUE)
+        c.rect(0, 1.2*cm - 0.6*cm, W, 0.6*cm, fill=1, stroke=0)
+        c.setFillColor(BLUE)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(W/2, 0.35*cm, "June 2026  --  CENG 479 Parallel Computing")
+
+
+# ---------------------------------------------------------------------------
+# Divider / Section header flowable
+# ---------------------------------------------------------------------------
+def sec_header(title, s):
+    return [
         Spacer(1, 0.3*cm),
-    ],[
-        Paragraph("GitHub Repository (Public):", s["CoverSmall"]),
-    ],[
-        Paragraph(f'<a href="{GITHUB}" color="#f0c040"><u>{GITHUB}</u></a>', s["CoverLink"]),
-    ],[
-        Spacer(1, 0.4*cm),
-    ],[
-        Paragraph("Team Members", s["CoverSub"]),
-    ],[
-        Paragraph("Muhammed Çakırgöz  ·  Musa Bilal Yaz", s["CoverSmall"]),
-    ],[
-        Spacer(1, 0.3*cm),
-    ],[
-        Paragraph("Submission 2 · June 2026", s["CoverSmall"]),
-    ]]
-
-    ct = Table(cover_data, colWidths=[W - 4*cm])
-    ct.setStyle(TableStyle([
-        ("BACKGROUND",  (0,0), (0,-1), BLUE),
-        ("ALIGN",       (0,0), (0,-1), "CENTER"),
-        ("VALIGN",      (0,0), (0,-1), "MIDDLE"),
-        ("TOPPADDING",  (0,0), (0,-1), 4),
-        ("BOTTOMPADDING",(0,0),(0,-1), 4),
-        ("LEFTPADDING", (0,0), (0,-1), 20),
-        ("RIGHTPADDING",(0,0), (0,-1), 20),
-        ("ROUNDEDCORNERS", [8,8,8,8]),
-    ]))
-
-    elems.append(Spacer(1, 2*cm))
-    elems.append(ct)
-    elems.append(Spacer(1, 1*cm))
-
-    # tech stack badges
-    badge_data = [["Java 17", "Maven 3.6+", "JMH", "ExecutorService", "ForkJoinPool"]]
-    bt = Table(badge_data, colWidths=[2.6*cm]*5)
-    bt.setStyle(TableStyle([
-        ("BACKGROUND",  (0,0),(-1,0), BLUE_LIGHT),
-        ("TEXTCOLOR",   (0,0),(-1,0), WHITE),
-        ("FONTNAME",    (0,0),(-1,0), "Helvetica-Bold"),
-        ("FONTSIZE",    (0,0),(-1,0), 8),
-        ("ALIGN",       (0,0),(-1,0), "CENTER"),
-        ("ROUNDEDCORNERS", [4,4,4,4]),
-        ("TOPPADDING",  (0,0),(-1,0), 5),
-        ("BOTTOMPADDING",(0,0),(-1,0), 5),
-        ("LEFTPADDING", (0,0),(-1,0), 4),
-        ("RIGHTPADDING",(0,0),(-1,0), 4),
-    ]))
-    elems.append(bt)
-    elems.append(PageBreak())
-    return elems
-
-# ── REPORT SECTIONS ───────────────────────────────────────────────────────────
-def report_section(s, rows):
-    e = []
-
-    # ── 1. Introduction ──────────────────────────────────────────────────────
-    e += section("1. Introduction", s)
-    e.append(body(
-        "High-resolution image processing is a computationally demanding task. When executed "
-        "sequentially, kernel-based convolution filters create significant performance bottlenecks "
-        "especially for large images (e.g. 4K). Because each output pixel depends only on a fixed "
-        "neighbourhood of the <i>input</i> image, the problem is embarrassingly parallel: the image "
-        "can be divided across threads with zero data dependencies during the compute phase.", s))
-    e.append(body(
-        "This report presents a parallel image-processing engine implemented in <b>Java</b> using "
-        "two distinct concurrency strategies: <b>ExecutorService</b> with horizontal strip "
-        "decomposition, and <b>ForkJoinPool</b> with divide-and-conquer work-stealing. Three "
-        "convolution filters — Grayscale, Gaussian Blur 5×5, and Sobel 3×3 — were benchmarked with "
-        "<b>JMH</b> (Java Microbenchmark Harness) to produce reproducible speedup measurements "
-        "across image sizes of 512×512, 1024×1024, and 2048×2048.", s))
-    e.append(body(
-        f'The complete source code is publicly available on GitHub: '
-        f'<a href="{GITHUB}" color="#2e6db4"><u>{GITHUB}</u></a>', s))
-
-    # ── 2. Sequential Baseline ───────────────────────────────────────────────
-    e += section("2. Sequential Baseline Implementation", s)
-    e.append(body(
-        "<b>SequentialProcessor</b> iterates over every pixel row-by-row and applies the given "
-        "filter. The <b>Filter</b> interface defines a single <i>apply(pixels[], width, height, x, y)</i> "
-        "method, making filter implementations interchangeable. Edge handling uses <b>clamped "
-        "coordinates</b>, ensuring identical boundary behaviour across all implementations.", s))
-
-    filter_data = [
-        ["Filter", "Type", "Kernel", "Cost per pixel"],
-        ["GrayscaleFilter",     "Point-wise",   "None (r=0)", "Low — 3 reads, 1 write"],
-        ["GaussianBlurFilter",  "Convolution",  "5×5",        "High — 25 weighted taps"],
-        ["SobelFilter",         "Gradient",     "3×3 (Gx+Gy)","Medium — 18 taps + √"],
+        HRFlowable(width="100%", thickness=2, color=BLUE, spaceAfter=3),
+        Paragraph(title, s["RSec"]),
     ]
-    e.append(tbl(filter_data, [4.5*cm, 2.8*cm, 2.8*cm, 5.4*cm]))
-    e.append(Spacer(1, 0.2*cm))
 
-    # ── 3. Parallel Implementation ───────────────────────────────────────────
-    e += section("3. Parallel Implementation", s)
-    e.append(sub("3.1  ExecutorService — Horizontal Strip Decomposition", s))
-    e.append(body(
-        "<b>ExecutorParallelProcessor</b> partitions the image into <i>N</i> equal horizontal strips "
-        "(one per thread). Each <b>Callable</b> task processes a contiguous band of rows and writes "
-        "results into a pre-allocated output array at its assigned offset. Because strips are "
-        "disjoint and the source array is read-only, <b>no locking is required</b> during computation. "
-        "The thread pool is created once and reused via try-with-resources.", s))
+def subsec(title, s):
+    return Paragraph(title, s["RSubSec"])
 
-    e.append(sub("3.2  ForkJoinPool — Divide-and-Conquer", s))
-    e.append(body(
-        "<b>ForkJoinParallelProcessor</b> uses a <b>RecursiveAction</b> that halves the row range "
-        "until it falls below a threshold (64 rows), then processes the sub-range directly. "
-        "The work-stealing scheduler dynamically rebalances load — particularly beneficial for "
-        "larger images where strip-count imbalance would arise in static decomposition.", s))
+def body(text, s):
+    return Paragraph(text, s["RBody"])
 
-    e.append(sub("3.3  Correctness Verification", s))
-    e.append(body(
-        "All parallel implementations are verified against the sequential baseline using "
-        "<b>CorrectnessVerifier.firstDifference()</b>, which performs a pixel-for-pixel comparison. "
-        "All six combinations (3 filters × 2 parallel strategies) produce <b>bit-identical</b> "
-        "output on a 2048×2048 synthetic image:", s))
-    cv_data = [
-        ["Filter", "Executor (12 threads)", "ForkJoin (12 threads)"],
-        ["Grayscale",       "✓ PASS", "✓ PASS"],
-        ["GaussianBlur5x5", "✓ PASS", "✓ PASS"],
-        ["Sobel3x3",        "✓ PASS", "✓ PASS"],
-    ]
-    e.append(tbl(cv_data, [5.5*cm, 5.5*cm, 5.5*cm], header_bg=GREEN))
-    e.append(Spacer(1, 0.2*cm))
+def bul(text, s):
+    return Paragraph(f"&bull; &nbsp;{text}", s["RBullet"])
 
-    # ── 4. Performance Comparison ────────────────────────────────────────────
-    e += section("4. Performance Comparison", s)
-    e.append(body(
-        "Benchmarks were run with <b>JMH</b> (10 warm-up + 10 measurement iterations, "
-        "AverageTime mode, ms/op) on a machine with 12 logical cores. The speedup formula is: "
-        "<b>Speedup = T_sequential / T_parallel</b>.", s))
 
-    e.append(sub("4.1  GaussianBlur 5×5 Speedup", s))
-    gb_data = [["Size", "Threads", "Seq (ms)", "Executor (ms)", "ForkJoin (ms)", "Exec ×", "FJ ×"]]
-    for r in rows:
-        if r["filter"] == "GaussianBlur5x5":
-            gb_data.append([f'{r["size"]}²', r["threads"],
-                r["sequential_ms"], r["executor_ms"], r["forkjoin_ms"],
-                r["executor_speedup"]+"×", r["forkjoin_speedup"]+"×"])
-    e.append(tbl(gb_data, [1.8*cm,1.6*cm,2.2*cm,2.5*cm,2.5*cm,1.9*cm,1.9*cm]))
-
-    e.append(Spacer(1, 0.15*cm))
-    e.append(sub("4.2  Sobel 3×3 Speedup", s))
-    sob_data = [["Size", "Threads", "Seq (ms)", "Executor (ms)", "ForkJoin (ms)", "Exec ×", "FJ ×"]]
-    for r in rows:
-        if r["filter"] == "Sobel3x3":
-            sob_data.append([f'{r["size"]}²', r["threads"],
-                r["sequential_ms"], r["executor_ms"], r["forkjoin_ms"],
-                r["executor_speedup"]+"×", r["forkjoin_speedup"]+"×"])
-    e.append(tbl(sob_data, [1.8*cm,1.6*cm,2.2*cm,2.5*cm,2.5*cm,1.9*cm,1.9*cm]))
-
-    e.append(Spacer(1, 0.15*cm))
-    e.append(sub("4.3  Grayscale Speedup", s))
-    gs_data = [["Size", "Threads", "Seq (ms)", "Executor (ms)", "ForkJoin (ms)", "Exec ×", "FJ ×"]]
-    for r in rows:
-        if r["filter"] == "Grayscale":
-            gs_data.append([f'{r["size"]}²', r["threads"],
-                r["sequential_ms"], r["executor_ms"], r["forkjoin_ms"],
-                r["executor_speedup"]+"×", r["forkjoin_speedup"]+"×"])
-    e.append(tbl(gs_data, [1.8*cm,1.6*cm,2.2*cm,2.5*cm,2.5*cm,1.9*cm,1.9*cm]))
-
-    e.append(Spacer(1, 0.3*cm))
-    e.append(sub("4.4  Speedup Charts", s))
-
-    # charts side by side
-    chart_row = [[
-        img("speedup_GaussianBlur5x5.png", 8.5*cm),
-        img("speedup_Sobel3x3.png", 8.5*cm),
-    ]]
-    ct = Table(chart_row, colWidths=[8.8*cm, 8.8*cm])
-    ct.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"CENTER"),("VALIGN",(0,0),(-1,-1),"MIDDLE")]))
-    e.append(ct)
-    e.append(Paragraph("Figure 1 — Left: GaussianBlur5x5  |  Right: Sobel3x3  (Executor vs ForkJoin)", s["Caption"]))
-
-    chart_row2 = [[
-        img("speedup_Grayscale.png", 8.5*cm),
-        img("speedup_combined.png", 8.5*cm),
-    ]]
-    ct2 = Table(chart_row2, colWidths=[8.8*cm, 8.8*cm])
-    ct2.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"CENTER"),("VALIGN",(0,0),(-1,-1),"MIDDLE")]))
-    e.append(ct2)
-    e.append(Paragraph("Figure 2 — Left: Grayscale  |  Right: All Filters Combined (2048×2048, Executor)", s["Caption"]))
-
-    e.append(sub("4.5  Analysis", s))
-    e.append(body(
-        "<b>Compute-bound filters (Gaussian Blur, Sobel)</b> scale well, reaching 4.3×–5.1× at "
-        "8 threads. ForkJoinPool outperforms ExecutorService on larger images due to dynamic "
-        "work-stealing load balancing.", s))
-    e.append(body(
-        "<b>Memory-bound filter (Grayscale)</b> plateaus at ~1.5× regardless of thread count. "
-        "The trivial single-channel lookup saturates memory bandwidth before CPU utilisation "
-        "can be maximised. This is consistent with the <b>Roofline Model</b>: operations with "
-        "low arithmetic intensity are bounded by memory bandwidth, not compute throughput.", s))
-    e.append(body(
-        "<b>Amdahl's Law</b> interpretation: the empirical ceiling for Gaussian Blur aligns with "
-        "a ~95% parallel fraction, where sequential overhead is limited to array allocation and "
-        "thread setup.", s))
-
-    # ── 5. Academic Background ───────────────────────────────────────────────
-    e += section("5. Academic Background", s)
-    e.append(body(
-        "The parallelization strategy in this project aligns with established literature. "
-        "<b>Seinstra et al. (2002)</b> demonstrated that convolution-based image filters exhibit "
-        "near-linear speedup when workload partitioning minimises inter-thread communication — "
-        "consistent with our strip-decomposition results for compute-intensive kernels.", s))
-    e.append(body(
-        "<b>Amdahl (1967)</b> provides the theoretical speedup ceiling <i>S = 1 / (1−p)</i>. "
-        "For Gaussian Blur our empirical data suggests p ≈ 0.95, yielding a theoretical maximum "
-        "of 20×; the observed 4–5× at 8 threads is expected given practical overhead.", s))
-    e.append(body(
-        "<b>Williams et al. (2009)</b> — the Roofline Model — explains the divergent scalability "
-        "of Grayscale vs. Gaussian Blur via arithmetic intensity: memory-bound kernels saturate "
-        "bandwidth before compute capacity is reached. <b>Lea (2000)</b> provides the theoretical "
-        "foundation for ForkJoinPool's work-stealing scheduler, which explains its advantage over "
-        "static decomposition for uneven workloads.", s))
-
-    # ── 6. Challenges & Solutions ────────────────────────────────────────────
-    e += section("6. Challenges and Solutions", s)
-    challenges = [
-        ("JVM JIT Warm-up & GC Noise",
-         "Initial System.nanoTime() measurements were skewed by JIT compilation and garbage "
-         "collection. <b>Solution:</b> Adopted JMH with dedicated warm-up iterations and "
-         "fork-per-configuration to eliminate noise and produce statistically reliable results."),
-        ("Pixel-Identical Correctness Across Implementations",
-         "Strip boundaries required careful handling to ensure parallel results were bit-identical "
-         "to the sequential baseline. <b>Solution:</b> Implemented CorrectnessVerifier with "
-         "pixel-for-pixel comparison; clamped-coordinate edge handling ensures identical "
-         "border pixel treatment across all strategies."),
-        ("Varying Scalability Between Filters",
-         "Grayscale achieved only ~1.5× speedup despite 8 threads, while Gaussian Blur reached "
-         "4.3×. <b>Solution:</b> Profiling identified memory bandwidth saturation (Roofline Model) "
-         "as the root cause for Grayscale — confirmed that the algorithm is memory-bound, not "
-         "thread-limited. This insight informed our Amdahl analysis in the report."),
-        ("ForkJoin Recursive Overhead on Small Images",
-         "For 512×512 images, ForkJoinPool's divide-and-conquer recursion overhead slightly "
-         "exceeded ExecutorService. <b>Solution:</b> Tuned SEQUENTIAL_THRESHOLD to 64 rows, "
-         "preventing excessive task granularity at small image sizes."),
-    ]
-    for title, desc in challenges:
-        e.append(KeepTogether([
-            bullet(f"<b>{title}:</b> {desc}", s),
-        ]))
-
-    # ── 7. Conclusion & Future Work ──────────────────────────────────────────
-    e += section("7. Conclusion and Future Improvements", s)
-    e.append(body(
-        "This project successfully demonstrated the efficacy of parallelizing image processing "
-        "algorithms using Java's concurrency frameworks. Empirical JMH benchmarking confirmed "
-        "significant speedups for compute-bound operations: Gaussian Blur achieved ~4.3× "
-        "(Executor) and ~4.81× (ForkJoin) at 8 threads on 2048×2048 images; Sobel reached "
-        "~4.49× and ~5.10× respectively. The Grayscale filter was confirmed as memory-bound, "
-        "limited to ~1.55× regardless of thread count. ForkJoinPool's work-stealing advantage "
-        "over static strip decomposition became more pronounced at larger image sizes.", s))
-    future = [
-        "GPU/CUDA acceleration — exploit thousands of CUDA cores for pixel-independent kernels",
-        "SIMD vectorisation — leverage AVX2/AVX-512 for intra-core throughput gains",
-        "4K and 8K image benchmarks — evaluate boundary overhead at ultra-high resolution",
-        "Adaptive thread pool — dynamically tune thread count based on image size and hardware",
-        "Memory-bound filter optimisation — cache-blocking and prefetching for Grayscale",
-    ]
-    for f in future:
-        e.append(bullet(f, s))
-
-    # ── 8. References ─────────────────────────────────────────────────────────
-    e += section("8. References", s)
-    refs = [
-        "Amdahl, G. M. (1967). Validity of the single processor approach to achieving large scale "
-        "computing capabilities. <i>Proceedings of the Spring Joint Computer Conference</i>, 483–485. "
-        "https://doi.org/10.1145/1465482.1465560",
-        "Seinstra, F. J., Koelma, D., &amp; Bagdanov, A. D. (2002). Finite state machine-based "
-        "optimization of data parallel regular domain problems applied to low-level image processing. "
-        "<i>IEEE Transactions on Parallel and Distributed Systems</i>, 15(10), 865–877. "
-        "https://doi.org/10.1109/TPDS.2004.45",
-        "Williams, S., Waterman, A., &amp; Patterson, D. (2009). Roofline: An insightful visual "
-        "performance model for multicore architectures. <i>Communications of the ACM</i>, 52(4), "
-        "65–76. https://doi.org/10.1145/1498765.1498785",
-        "Lea, D. (2000). A Java fork/join framework. <i>Proceedings of the ACM 2000 Conference on "
-        "Java Grande</i>, 36–43. https://doi.org/10.1145/337449.337465",
-    ]
-    for i, r in enumerate(refs, 1):
-        e.append(body(f"[{i}] {r}", s))
-
-    return e
-
-# ── SLIDE BUILDER ─────────────────────────────────────────────────────────────
-def slide_box(content_rows, title, s, title_col=BLUE, accent=SLIDE_ACC):
-    """Build a single slide as a coloured Table."""
-    W, _ = A4
-    inner_w = W - 4*cm
-
-    rows = [[Paragraph(title, s["SlideTitle"])]]
-    rows += [[c] for c in content_rows]
-
-    t = Table(rows, colWidths=[inner_w])
+# ---------------------------------------------------------------------------
+# Table helper
+# ---------------------------------------------------------------------------
+def make_table(data, col_widths, hdr_color=BLUE):
+    t = Table(data, colWidths=col_widths, repeatRows=1)
     t.setStyle(TableStyle([
-        ("BACKGROUND",   (0,0),(0,0),  title_col),
-        ("BACKGROUND",   (0,1),(0,-1), BLUE),
-        ("ALIGN",        (0,0),(0,-1), "LEFT"),
-        ("VALIGN",       (0,0),(0,-1), "TOP"),
-        ("TOPPADDING",   (0,0),(0,-1), 8),
-        ("BOTTOMPADDING",(0,0),(0,-1), 6),
-        ("LEFTPADDING",  (0,0),(0,-1), 16),
-        ("RIGHTPADDING", (0,0),(0,-1), 16),
-        ("ROUNDEDCORNERS",[6,6,6,6]),
+        ("BACKGROUND",    (0,0),(-1,0),  hdr_color),
+        ("TEXTCOLOR",     (0,0),(-1,0),  WHITE),
+        ("FONTNAME",      (0,0),(-1,0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0),(-1,0),  8.5),
+        ("ALIGN",         (0,0),(-1,-1), "CENTER"),
+        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1), [WHITE, ACCENT_ROW]),
+        ("FONTNAME",      (0,1),(-1,-1), "Helvetica"),
+        ("FONTSIZE",      (0,1),(-1,-1), 8),
+        ("GRID",          (0,0),(-1,-1), 0.35, colors.HexColor("#bbbbbb")),
+        ("TOPPADDING",    (0,0),(-1,-1), 4),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 4),
     ]))
     return t
 
-def presentation_section(s, rows):
+
+# ---------------------------------------------------------------------------
+# Report content
+# ---------------------------------------------------------------------------
+def report_content(s, rows):
     e = []
-    W, _ = A4
-    inner_w = W - 4*cm
 
-    def sl(title, content_rows):
-        return slide_box(content_rows, title, s)
+    # page title
+    e.append(Spacer(1, 0.2*cm))
+    e.append(Paragraph("CENG 479 — Parallel Image Processing Engine", s["RTitle"]))
+    e.append(Paragraph("Implementation Report  |  Submission 2", s["RCaption"]))
+    e.append(HRFlowable(width="100%", thickness=1, color=BLUE_LIGHT, spaceAfter=4))
 
-    def sb(text): return Paragraph(f"▶  {text}", s["SlideBullet"])
-    def sn(text): return Paragraph(text, s["SlideNote"])
-    def ss(h=0.2): return Spacer(1, h*cm)
+    # 1. Introduction
+    e += sec_header("1. Introduction", s)
+    e.append(body(
+        "High-resolution image processing is computationally demanding. Sequential execution of "
+        "kernel-based convolution filters creates significant bottlenecks at large image sizes (4K+). "
+        "Because each output pixel depends solely on a fixed neighbourhood of the <i>input</i> image, "
+        "the problem is <b>embarrassingly parallel</b>: the image can be divided across threads with "
+        "zero inter-thread data dependencies during the compute phase.", s))
+    e.append(body(
+        "This report presents a parallel engine built in <b>Java</b> using two concurrency strategies: "
+        "<b>ExecutorService</b> with horizontal strip decomposition and <b>ForkJoinPool</b> with "
+        "divide-and-conquer work-stealing. Three filters — Grayscale, Gaussian Blur 5x5, Sobel 3x3 — "
+        "were benchmarked with <b>JMH</b> across image sizes 512x512, 1024x1024, 2048x2048.", s))
+    e.append(body(
+        f'Source code (public): <font color="#2e6db4"><u>{GITHUB}</u></font>', s))
 
-    e.append(Paragraph("PRESENTATION SLIDES", s["SecHeader"]))
-    e.append(HRFlowable(width="100%", thickness=1.5, color=BLUE, spaceAfter=6))
+    # 2. Sequential Baseline
+    e += sec_header("2. Sequential Baseline Implementation", s)
+    e.append(body(
+        "<b>SequentialProcessor</b> iterates row-by-row applying the given filter. "
+        "The <b>Filter</b> interface exposes a single <i>apply(pixels[], width, height, x, y)</i> "
+        "method. Edge handling uses <b>clamped coordinates</b>, ensuring identical boundary "
+        "behaviour across all implementations.", s))
+    fd = [
+        ["Filter",           "Type",         "Kernel",    "Cost per pixel"],
+        ["GrayscaleFilter",  "Point-wise",   "None (r=0)","Low — 3 reads, 1 write"],
+        ["GaussianBlurFilter","Convolution",  "5x5",       "High — 25 weighted taps"],
+        ["SobelFilter",      "Gradient",     "3x3 Gx+Gy", "Medium — 18 taps + sqrt"],
+    ]
+    e.append(make_table(fd, [4.2*cm, 2.8*cm, 2.6*cm, 5.9*cm]))
 
-    # Slide 1 — Title
-    e.append(sl("Slide 1 — Title", [
-        ss(),
-        Paragraph("Parallel Image Processing Engine", s["SlideSubTitle"]),
-        ss(0.1),
-        Paragraph("CENG 479 — Parallel Computing · Gazi University · Spring 2026", s["SlideBody"]),
-        ss(0.1),
-        Paragraph("Muhammed Çakırgöz  ·  Musa Bilal Yaz", s["SlideBody"]),
-        ss(0.2),
-        Paragraph(f'GitHub: <a href="{GITHUB}" color="#f0c040"><u>{GITHUB}</u></a>', s["SlideNote"]),
-        ss(),
-    ]))
-    e.append(Spacer(1, 0.4*cm))
+    # 3. Parallel Implementation
+    e += sec_header("3. Parallel Implementation", s)
+    e.append(subsec("3.1  ExecutorService — Horizontal Strip Decomposition", s))
+    e.append(body(
+        "<b>ExecutorParallelProcessor</b> divides the image into N equal horizontal strips "
+        "(one per thread). Each <b>Callable</b> task processes rows [start, end) and writes "
+        "into a pre-allocated output array at its assigned offset. Strips are disjoint and "
+        "the source array is read-only, so <b>no locking is required</b>. "
+        "The thread pool is created once and reused via try-with-resources.", s))
+    e.append(subsec("3.2  ForkJoinPool — Divide-and-Conquer", s))
+    e.append(body(
+        "<b>ForkJoinParallelProcessor</b> uses a <b>RecursiveAction</b> that halves the row "
+        "range until it falls below 64 rows (sequential threshold), then processes directly. "
+        "The work-stealing scheduler rebalances load dynamically — advantageous for larger "
+        "images where static strip imbalance would arise.", s))
+    e.append(subsec("3.3  Correctness Verification", s))
+    e.append(body(
+        "<b>CorrectnessVerifier.firstDifference()</b> performs a pixel-for-pixel comparison "
+        "between parallel output and sequential baseline. All 6 combinations "
+        "(3 filters x 2 strategies) on a 2048x2048 synthetic image produce <b>bit-identical</b> "
+        "output:", s))
+    cv = [
+        ["Filter",          "ExecutorService (12 threads)", "ForkJoinPool (12 threads)"],
+        ["Grayscale",       "PASS",                         "PASS"],
+        ["GaussianBlur5x5", "PASS",                         "PASS"],
+        ["Sobel3x3",        "PASS",                         "PASS"],
+    ]
+    e.append(make_table(cv, [5.0*cm, 5.5*cm, 5.0*cm], hdr_color=GREEN_D))
 
-    # Slide 2 — Problem & Motivation
-    e.append(sl("Slide 2 — Problem &amp; Motivation", [
-        ss(0.1),
-        sb("High-res image filtering (4K+) is slow on a single thread"),
-        sb("Kernel convolution = O(W × H × K²) per filter"),
-        sb("Each output pixel is independent of others → embarrassingly parallel"),
-        sb("Goal: multi-threaded speedup with zero correctness compromise"),
-        ss(0.1),
-        sn("Amdahl's Law: theoretical max speedup = 1 / (1 − p),  p ≈ 0.95 for Gaussian Blur"),
-        ss(0.1),
-    ]))
-    e.append(Spacer(1, 0.4*cm))
+    # 4. Performance
+    e += sec_header("4. Performance Comparison", s)
+    e.append(body(
+        "All benchmarks use <b>JMH</b> (10 warm-up + 10 measurement iterations, "
+        "AverageTime mode, ms/op) on a 12-logical-core machine. "
+        "Speedup = T_sequential / T_parallel.", s))
 
-    # Slide 3 — Architecture Overview
-    e.append(sl("Slide 3 — Architecture Overview", [
-        ss(0.1),
-        sb("3 Filters: Grayscale (point-wise), Gaussian Blur 5×5, Sobel 3×3"),
-        sb("SequentialProcessor — single-thread row-by-row baseline"),
-        sb("ExecutorParallelProcessor — fixed thread pool + horizontal strip decomposition"),
-        sb("ForkJoinParallelProcessor — RecursiveAction + work-stealing divide-and-conquer"),
-        sb("CorrectnessVerifier — pixel-for-pixel comparison against baseline"),
-        sb("JMH Benchmark — reproducible timing, eliminates JIT warm-up noise"),
-        ss(0.1),
-    ]))
-    e.append(Spacer(1, 0.4*cm))
+    for fname, label in [("GaussianBlur5x5","4.1  GaussianBlur 5x5"),
+                         ("Sobel3x3",       "4.2  Sobel 3x3"),
+                         ("Grayscale",      "4.3  Grayscale")]:
+        e.append(subsec(label, s))
+        hdr = [["Size","Threads","Seq (ms)","Executor (ms)","ForkJoin (ms)","Exec x","FJ x"]]
+        for r in rows:
+            if r["filter"] == fname:
+                hdr.append([f'{r["size"]}^2', r["threads"],
+                    r["sequential_ms"], r["executor_ms"], r["forkjoin_ms"],
+                    r["executor_speedup"]+"x", r["forkjoin_speedup"]+"x"])
+        e.append(make_table(hdr, [2.0*cm,1.7*cm,2.3*cm,2.6*cm,2.6*cm,1.8*cm,1.8*cm]))
+        e.append(Spacer(1, 0.2*cm))
 
-    # Slide 4 — ExecutorService Design
-    e.append(sl("Slide 4 — ExecutorService Design", [
-        ss(0.1),
-        sb("Image split into N equal horizontal strips (N = thread count)"),
-        sb("Each Callable processes rows [start, end) → writes to pre-allocated output[]"),
-        sb("Source array is READ-ONLY during compute → zero locking overhead"),
-        sb("Thread pool reused across filter calls (try-with-resources)"),
-        ss(0.1),
-        sn("Strip[i] covers rows:  i×(H/N)  to  (i+1)×(H/N)"),
-        ss(0.1),
-    ]))
-    e.append(Spacer(1, 0.4*cm))
+    # charts — each full width with caption
+    e.append(subsec("4.4  Speedup Charts", s))
+    e.append(Spacer(1, 0.2*cm))
 
-    # Slide 5 — ForkJoinPool Design
-    e.append(sl("Slide 5 — ForkJoinPool Design", [
-        ss(0.1),
-        sb("RecursiveAction splits row range in half recursively"),
-        sb("Base case: range ≤ 64 rows → process directly (sequential threshold)"),
-        sb("Work-stealing: idle threads steal tasks from busy threads' queues"),
-        sb("Better dynamic load balance than static strips for large images"),
-        sb("ForkJoin outperforms Executor on 2048×2048 (Gaussian: 4.81× vs 4.30×)"),
-        ss(0.1),
-    ]))
-    e.append(Spacer(1, 0.4*cm))
+    chart_w = PAGE_W - 4.5*cm
 
-    # Slide 6 — Correctness Results
-    e.append(sl("Slide 6 — Correctness Verification", [
-        ss(0.1),
-        sb("CorrectnessVerifier.firstDifference() → pixel-by-pixel scan"),
-        sb("Tested on 2048×2048 synthetic image, all 6 combinations"),
-        ss(0.1),
-        Paragraph("All results: ✓ PASS — bit-identical to sequential baseline", s["SlideBody"]),
-        ss(0.1),
-        sn("Grayscale Executor/ForkJoin · GaussianBlur5x5 Executor/ForkJoin · Sobel3x3 Executor/ForkJoin"),
-        ss(0.1),
-    ]))
-    e.append(Spacer(1, 0.4*cm))
+    for fname, caption in [
+        ("speedup_GaussianBlur5x5.png",
+         "Figure 1 — GaussianBlur 5x5: Executor (left) vs ForkJoinPool (right) across image sizes"),
+        ("speedup_Sobel3x3.png",
+         "Figure 2 — Sobel 3x3: Executor (left) vs ForkJoinPool (right) across image sizes"),
+        ("speedup_Grayscale.png",
+         "Figure 3 — Grayscale: memory-bound filter — speedup plateaus ~1.5x regardless of threads"),
+        ("speedup_combined.png",
+         "Figure 4 — All filters combined (2048x2048, Executor) — compute-bound filters scale, memory-bound does not"),
+    ]:
+        chart = imgf(fname, chart_w)
+        e.append(KeepTogether([chart, Paragraph(caption, s["RCaption"])]))
+        e.append(Spacer(1, 0.3*cm))
 
-    # Slide 7 — Performance Results
-    e.append(sl("Slide 7 — Performance Results (8 threads, 2048×2048)", [
-        ss(0.1),
-        sb("Gaussian Blur:  Executor 4.30×  |  ForkJoin 4.81×"),
-        sb("Sobel 3×3:      Executor 4.49×  |  ForkJoin 5.10×"),
-        sb("Grayscale:      Executor 1.55×  |  ForkJoin 1.54×  ← memory-bound"),
-        ss(0.1),
-        sn("JMH benchmark · 10 warm-up + 10 measurement iterations · AverageTime (ms/op)"),
-        ss(0.1),
-    ]))
-    e.append(Spacer(1, 0.4*cm))
+    e.append(subsec("4.5  Analysis", s))
+    e.append(body(
+        "<b>Compute-bound filters (Gaussian Blur, Sobel)</b> scale well with thread count, "
+        "reaching 4.3x–5.1x speedup at 8 threads. ForkJoinPool outperforms ExecutorService "
+        "on larger images (2048x2048) due to dynamic work-stealing load balancing.", s))
+    e.append(body(
+        "<b>Memory-bound filter (Grayscale)</b> plateaus at ~1.5x regardless of thread count. "
+        "The single-channel lookup saturates memory bandwidth before CPU utilisation can increase — "
+        "consistent with the <b>Roofline Model</b>: low arithmetic intensity = bandwidth-limited.", s))
+    e.append(body(
+        "<b>Amdahl's Law</b>: empirical ceiling for Gaussian Blur aligns with p ~ 0.95 parallel "
+        "fraction; sequential overhead (array allocation, thread setup) limits the theoretical max.", s))
 
-    # Slide 8 — Charts
-    e.append(sl("Slide 8 — Speedup Charts", [ss(0.15)]))
-    chart_row = [[
-        img("speedup_GaussianBlur5x5.png", 8.2*cm),
-        img("speedup_combined.png",        8.2*cm),
-    ]]
-    ct = Table(chart_row, colWidths=[8.4*cm, 8.4*cm])
-    ct.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"CENTER")]))
-    e.append(ct)
-    e.append(Paragraph(
-        "Left: GaussianBlur5x5 — Executor vs ForkJoin  |  Right: All filters combined (Executor, 2048×2048)",
-        s["Caption"]))
-    e.append(Spacer(1, 0.4*cm))
+    # 5. Academic Background
+    e += sec_header("5. Academic Background", s)
+    e.append(body(
+        "<b>Seinstra et al. (2002)</b> showed convolution filters exhibit near-linear speedup "
+        "when partitioning minimises inter-thread communication — consistent with our "
+        "strip-decomposition results for compute-intensive kernels.", s))
+    e.append(body(
+        "<b>Amdahl (1967)</b>: S = 1/(1-p). For Gaussian Blur, p ~ 0.95 gives theoretical max "
+        "~20x; our 4-5x at 8 threads is expected given practical overhead.", s))
+    e.append(body(
+        "<b>Williams et al. (2009)</b> — Roofline Model — explains divergent scalability via "
+        "arithmetic intensity: memory-bound kernels saturate bandwidth before compute capacity. "
+        "<b>Lea (2000)</b> provides the theoretical basis for ForkJoinPool's work-stealing "
+        "scheduler, explaining its advantage for uneven workloads.", s))
 
-    # Slide 9 — Challenges & Key Findings
-    e.append(sl("Slide 9 — Challenges &amp; Key Findings", [
-        ss(0.1),
-        sb("JIT warm-up → solved with JMH (fork-per-config, warm-up iters)"),
-        sb("Bit-identical correctness → clamped edges + CorrectnessVerifier"),
-        sb("Grayscale bottleneck → memory bandwidth saturated (Roofline Model)"),
-        sb("ForkJoin recursive overhead on small images → tuned threshold (64 rows)"),
-        ss(0.1),
-        sn("Key insight: parallel speedup is filter-dependent — arithmetic intensity determines scalability"),
-        ss(0.1),
-    ]))
-    e.append(Spacer(1, 0.4*cm))
+    # 6. Challenges
+    e += sec_header("6. Challenges and Solutions", s)
+    chs = [
+        ("JVM JIT Warm-up and GC Noise",
+         "System.nanoTime() measurements were skewed by JIT and GC. "
+         "<b>Solution:</b> Adopted JMH with warm-up iterations and fork-per-config."),
+        ("Bit-Identical Correctness Across Implementations",
+         "Strip boundaries required careful handling. "
+         "<b>Solution:</b> CorrectnessVerifier with pixel-for-pixel scan; "
+         "clamped-coordinate edge handling ensures identical border treatment."),
+        ("Varying Scalability Between Filters",
+         "Grayscale achieved only ~1.5x with 8 threads. "
+         "<b>Solution:</b> Profiling confirmed memory bandwidth saturation (Roofline Model) "
+         "as root cause — not thread management inefficiency."),
+        ("ForkJoin Recursive Overhead on Small Images",
+         "For 512x512, ForkJoin recursion overhead slightly exceeded Executor. "
+         "<b>Solution:</b> Tuned SEQUENTIAL_THRESHOLD to 64 rows to prevent "
+         "excessive task granularity."),
+    ]
+    for title, desc in chs:
+        e.append(KeepTogether([bul(f"<b>{title}:</b>  {desc}", s)]))
 
-    # Slide 10 — Conclusion & Future Work
-    e.append(sl("Slide 10 — Conclusion &amp; Future Work", [
-        ss(0.1),
-        sb("Successfully parallelised 3 convolution filters with 2 Java strategies"),
-        sb("Up to 5.10× speedup (Sobel, ForkJoin, 8 threads, 2048×2048)"),
-        sb("Memory-bound filters (Grayscale) need different optimisation strategy"),
-        ss(0.1),
-        Paragraph("Future Work:", s["SlideSubTitle"]),
-        sb("GPU/CUDA — exploit thousands of concurrent cores"),
-        sb("SIMD vectorisation (AVX2/AVX-512) for intra-core throughput"),
-        sb("Adaptive thread pool — dynamic tuning per image size"),
-        ss(0.1),
-    ]))
+    # 7. Conclusion
+    e += sec_header("7. Conclusion and Future Improvements", s)
+    e.append(body(
+        "This project successfully demonstrated parallelisation of image convolution algorithms "
+        "using Java concurrency. JMH benchmarks confirmed significant speedups for compute-bound "
+        "operations: Gaussian Blur reached ~4.30x (Executor) and ~4.81x (ForkJoin) at 8 threads "
+        "on 2048x2048; Sobel reached ~4.49x and ~5.10x. Grayscale was confirmed memory-bound "
+        "at ~1.55x. ForkJoinPool's work-stealing advantage grew with image size.", s))
+    fws = [
+        "GPU/CUDA — exploit thousands of CUDA cores for pixel-independent kernels",
+        "SIMD vectorisation (AVX2/AVX-512) — intra-core throughput gains",
+        "4K and 8K benchmarks — evaluate boundary overhead at ultra-high resolution",
+        "Adaptive thread pool — dynamic tuning based on image size and hardware profile",
+        "Cache-blocking and prefetching — optimise memory-bound filters like Grayscale",
+    ]
+    for fw in fws:
+        e.append(bul(fw, s))
+
+    # 8. References
+    e += sec_header("8. References", s)
+    refs = [
+        "Amdahl, G. M. (1967). Validity of the single processor approach to achieving large scale "
+        "computing capabilities. <i>Proc. Spring Joint Computer Conf.</i>, 483-485. "
+        "https://doi.org/10.1145/1465482.1465560",
+        "Seinstra, F. J., Koelma, D., & Bagdanov, A. D. (2002). Finite state machine-based "
+        "optimization of data parallel regular domain problems applied to low-level image "
+        "processing. <i>IEEE Trans. Parallel Distrib. Syst.</i>, 15(10), 865-877. "
+        "https://doi.org/10.1109/TPDS.2004.45",
+        "Williams, S., Waterman, A., & Patterson, D. (2009). Roofline: An insightful visual "
+        "performance model for multicore architectures. <i>Commun. ACM</i>, 52(4), 65-76. "
+        "https://doi.org/10.1145/1498765.1498785",
+        "Lea, D. (2000). A Java fork/join framework. <i>Proc. ACM Java Grande Conf.</i>, 36-43. "
+        "https://doi.org/10.1145/337449.337465",
+    ]
+    for i, r in enumerate(refs, 1):
+        e.append(Paragraph(f"[{i}]  {r}", s["RSmall"]))
+        e.append(Spacer(1, 0.15*cm))
 
     return e
 
-# ── MAIN ──────────────────────────────────────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# Slide builder
+# ---------------------------------------------------------------------------
+class SlideFlowable(Flowable):
+    """Draws a single presentation slide as a blue rounded rectangle."""
+
+    SLIDE_W = PAGE_W - 4*cm
+    SLIDE_H = 7.5*cm
+
+    def __init__(self, number, title, items, note=None):
+        Flowable.__init__(self)
+        self.number = number
+        self.title  = title
+        self.items  = items   # list of (kind, text): kind in "bullet","body","sub"
+        self.note   = note
+        self.width  = self.SLIDE_W
+        self.height = self.SLIDE_H + 0.1*cm
+
+    def draw(self):
+        c   = self.canv
+        W   = self.SLIDE_W
+        H   = self.SLIDE_H
+
+        # background
+        c.setFillColor(BLUE)
+        c.roundRect(0, 0, W, H, 8, fill=1, stroke=0)
+
+        # title bar
+        c.setFillColor(colors.HexColor("#0d2244"))
+        c.roundRect(0, H - 1.5*cm, W, 1.5*cm, 8, fill=1, stroke=0)
+        c.setFillColor(BLUE)
+        c.rect(0, H - 1.5*cm, W, 0.5*cm, fill=1, stroke=0)
+
+        # slide number badge
+        c.setFillColor(GOLD)
+        c.roundRect(0.3*cm, H - 1.3*cm, 1.0*cm, 0.8*cm, 4, fill=1, stroke=0)
+        c.setFillColor(BLUE)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawCentredString(0.3*cm + 0.5*cm, H - 0.95*cm, str(self.number))
+
+        # title text
+        c.setFillColor(WHITE)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(1.6*cm, H - 1.1*cm, self.title)
+
+        # gold top border line
+        c.setStrokeColor(GOLD)
+        c.setLineWidth(1.5)
+        c.line(0.3*cm, H - 1.55*cm, W - 0.3*cm, H - 1.55*cm)
+
+        # content items
+        y = H - 2.2*cm
+        for kind, text in self.items:
+            if kind == "sub":
+                c.setFillColor(GOLD)
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(0.6*cm, y, text)
+                y -= 0.5*cm
+            elif kind == "bullet":
+                c.setFillColor(GOLD)
+                c.circle(0.75*cm, y + 0.12*cm, 0.055*cm, fill=1, stroke=0)
+                c.setFillColor(WHITE)
+                c.setFont("Helvetica", 9)
+                self._wrapped(c, text, 0.95*cm, y, W - 1.2*cm, 9)
+                lines = self._line_count(text, W - 1.2*cm, 9)
+                y -= lines * 0.42*cm + 0.08*cm
+            elif kind == "body":
+                c.setFillColor(colors.HexColor("#aaccee"))
+                c.setFont("Helvetica-Oblique", 8.5)
+                c.drawCentredString(W/2, y, text)
+                y -= 0.5*cm
+            elif kind == "space":
+                y -= 0.3*cm
+
+        # note at bottom
+        if self.note:
+            c.setFillColor(colors.HexColor("#0d2244"))
+            c.roundRect(0.3*cm, 0.2*cm, W - 0.6*cm, 0.65*cm, 4, fill=1, stroke=0)
+            c.setFillColor(GOLD)
+            c.setFont("Helvetica-Oblique", 7.5)
+            c.drawCentredString(W/2, 0.38*cm, self.note)
+
+    def _wrapped(self, c, text, x, y, max_w, fs):
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        words = text.split()
+        line  = ""
+        first = True
+        for w in words:
+            test = (line + " " + w).strip()
+            if stringWidth(test, "Helvetica", fs) <= max_w:
+                line = test
+            else:
+                c.drawString(x, y, line)
+                y -= 0.38*cm
+                line = w
+                first = False
+        if line:
+            c.drawString(x, y, line)
+
+    def _line_count(self, text, max_w, fs):
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        words = text.split()
+        line  = ""
+        count = 1
+        for w in words:
+            test = (line + " " + w).strip()
+            if stringWidth(test, "Helvetica", fs) <= max_w:
+                line = test
+            else:
+                count += 1
+                line = w
+        return count
+
+
+def presentation_content(s, rows):
+    e = []
+    e.append(PageBreak())
+    e.append(Spacer(1, 0.3*cm))
+    e.append(HRFlowable(width="100%", thickness=2, color=BLUE, spaceAfter=3))
+    e.append(Paragraph("PRESENTATION SLIDES  (10 Slides)", s["RSec"]))
+    e.append(HRFlowable(width="100%", thickness=0.5, color=BLUE_LIGHT, spaceAfter=8))
+
+    slides = [
+        SlideFlowable(1, "Parallel Image Processing Engine", [
+            ("space",""),
+            ("body",  "CENG 479 -- Parallel Computing  |  Gazi University  |  Spring 2026"),
+            ("body",  "Muhammed Cakiagoz   .   Musa Bilal Yaz"),
+            ("space",""),
+            ("body",  GITHUB),
+        ], note="Java Threads | ExecutorService | ForkJoinPool | JMH Benchmark"),
+
+        SlideFlowable(2, "Problem & Motivation", [
+            ("bullet","High-resolution image filtering (4K+) is slow on a single thread"),
+            ("bullet","Convolution cost: O(W x H x K^2) per filter -- bottleneck at scale"),
+            ("bullet","Each output pixel is INDEPENDENT of others -- embarrassingly parallel"),
+            ("bullet","Goal: multi-threaded speedup with zero correctness compromise"),
+            ("space",""),
+            ("body",  "Amdahl's Law: S = 1/(1-p)  --  p ~ 0.95 for Gaussian Blur"),
+        ], note="Theoretical max speedup ~20x at p=0.95; practical ceiling limited by memory and overhead"),
+
+        SlideFlowable(3, "Architecture Overview", [
+            ("sub",   "Filters:"),
+            ("bullet","Grayscale (point-wise), Gaussian Blur 5x5, Sobel 3x3"),
+            ("sub",   "Implementations:"),
+            ("bullet","SequentialProcessor -- single-thread baseline"),
+            ("bullet","ExecutorParallelProcessor -- fixed pool + horizontal strips"),
+            ("bullet","ForkJoinParallelProcessor -- RecursiveAction + work-stealing"),
+            ("sub",   "Tools:"),
+            ("bullet","CorrectnessVerifier + JMH Benchmark"),
+        ], note="All source code publicly available on GitHub"),
+
+        SlideFlowable(4, "ExecutorService Design", [
+            ("bullet","Image split into N equal horizontal strips (N = thread count)"),
+            ("bullet","Each Callable processes rows [start, end) with no locking"),
+            ("bullet","Source array is READ-ONLY during compute -- zero synchronisation overhead"),
+            ("bullet","Thread pool created once, reused via try-with-resources"),
+            ("space",""),
+            ("body",  "Strip[i] covers rows:  i*(H/N)  to  (i+1)*(H/N)"),
+        ], note="Static decomposition -- optimal for uniform workloads"),
+
+        SlideFlowable(5, "ForkJoinPool Design", [
+            ("bullet","RecursiveAction splits row range in half recursively"),
+            ("bullet","Base case: range <= 64 rows -- process sequentially"),
+            ("bullet","Work-stealing: idle threads steal tasks from busy queues"),
+            ("bullet","Better dynamic load balance than static strips for large images"),
+            ("space",""),
+            ("bullet","ForkJoin outperforms Executor on 2048x2048 (Gaussian: 4.81x vs 4.30x)"),
+        ], note="Dynamic decomposition -- adapts to runtime load imbalance"),
+
+        SlideFlowable(6, "Correctness Verification", [
+            ("body",  "CorrectnessVerifier.firstDifference() -- pixel-by-pixel scan"),
+            ("space",""),
+            ("body",  "Tested on 2048x2048 synthetic image -- ALL 6 combinations PASS"),
+            ("space",""),
+            ("bullet","Grayscale:       Executor PASS  |  ForkJoin PASS"),
+            ("bullet","GaussianBlur5x5: Executor PASS  |  ForkJoin PASS"),
+            ("bullet","Sobel3x3:        Executor PASS  |  ForkJoin PASS"),
+        ], note="Bit-identical output to sequential baseline in all cases"),
+
+        SlideFlowable(7, "Performance Results (8 threads, 2048x2048)", [
+            ("sub",   "Compute-bound (scales well):"),
+            ("bullet","Gaussian Blur:  Executor 4.30x  |  ForkJoin 4.81x"),
+            ("bullet","Sobel 3x3:      Executor 4.49x  |  ForkJoin 5.10x"),
+            ("space",""),
+            ("sub",   "Memory-bound (bandwidth limited):"),
+            ("bullet","Grayscale:      Executor 1.55x  |  ForkJoin 1.54x"),
+        ], note="JMH benchmark | 10 warm-up + 10 measurement iterations | AverageTime ms/op"),
+
+        SlideFlowable(8, "Speedup Charts", [
+            ("space",""),
+            ("body",  "GaussianBlur5x5 & Sobel -- near-linear scaling up to 4-5x at 8 threads"),
+            ("body",  "Grayscale -- memory bandwidth saturation caps speedup at ~1.5x"),
+            ("body",  "ForkJoin advantage grows with image size (work-stealing benefit)"),
+            ("space",""),
+            ("body",  "[See Figures 1-4 in the report section for full charts]"),
+        ], note="Roofline Model: compute-bound = scales | memory-bound = does not"),
+
+        SlideFlowable(9, "Challenges & Key Findings", [
+            ("bullet","JIT warm-up noise -- solved with JMH (fork-per-config, 10 warm-up iters)"),
+            ("bullet","Correctness -- clamped edges + pixel-for-pixel CorrectnessVerifier"),
+            ("bullet","Grayscale bottleneck -- memory bandwidth saturated (Roofline Model)"),
+            ("bullet","ForkJoin overhead on small images -- tuned threshold to 64 rows"),
+            ("space",""),
+            ("body",  "Key insight: speedup is FILTER-DEPENDENT -- arithmetic intensity determines scalability"),
+        ], note="Benchmark environment: 12 logical cores, JDK 17, Maven 3.6"),
+
+        SlideFlowable(10, "Conclusion & Future Work", [
+            ("bullet","Parallelised 3 convolution filters with 2 Java concurrency strategies"),
+            ("bullet","Up to 5.10x speedup (Sobel, ForkJoin, 8 threads, 2048x2048)"),
+            ("bullet","Memory-bound filters need different strategy (not thread-level parallelism)"),
+            ("sub",   "Future Work:"),
+            ("bullet","GPU/CUDA -- thousands of concurrent cores for pixel-independent kernels"),
+            ("bullet","SIMD vectorisation (AVX2/AVX-512) for intra-core throughput"),
+            ("bullet","Adaptive thread pool -- dynamic tuning per image size and hardware"),
+        ], note=GITHUB),
+    ]
+
+    for slide in slides:
+        e.append(slide)
+        e.append(Spacer(1, 0.45*cm))
+
+    return e
+
+
+# ---------------------------------------------------------------------------
+# Page numbering callback
+# ---------------------------------------------------------------------------
+def add_page_number(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(GRAY_D)
+    page = canvas.getPageNumber()
+    canvas.drawRightString(PAGE_W - 2*cm, 1.1*cm, f"Page {page}")
+    canvas.drawString(2*cm, 1.1*cm, "CENG 479 — Parallel Image Processing  |  Submission 2")
+    canvas.setStrokeColor(BLUE_LIGHT)
+    canvas.setLineWidth(0.5)
+    canvas.line(2*cm, 1.35*cm, PAGE_W - 2*cm, 1.35*cm)
+    canvas.restoreState()
+
+
+def cover_page_cb(canvas, doc):
+    """No footer on cover page."""
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 def main():
-    out = os.path.join(BASE, "CENG479_Sub2_Final_Report.pdf")
+    out  = os.path.join(BASE, "CENG479_Sub2_Final_Report.pdf")
+    rows = load_speedup()
+    s    = make_styles()
+
     doc = SimpleDocTemplate(
         out,
         pagesize=A4,
         leftMargin=2*cm, rightMargin=2*cm,
-        topMargin=1.8*cm, bottomMargin=1.8*cm,
-        title="CENG 479 Parallel Image Processing — Final Report",
-        author="Muhammed Çakırgöz, Musa Bilal Yaz",
+        topMargin=1.5*cm, bottomMargin=2*cm,
+        title="CENG 479 Parallel Image Processing -- Final Report",
+        author="Muhammed Cakiagoz, Musa Bilal Yaz",
     )
 
-    s = make_styles()
-    rows = load_speedup()
     story = []
-    story += cover_page(s)
-    story += report_section(s, rows)
-    story.append(PageBreak())
-    story += presentation_section(s, rows)
 
-    doc.build(story)
-    print(f"PDF written: {out}")
+    # --- Cover ---
+    story.append(CoverPage())
+    story.append(PageBreak())
+
+    # --- Report ---
+    story += report_content(s, rows)
+
+    # --- Presentation ---
+    story += presentation_content(s, rows)
+
+    doc.build(story, onFirstPage=cover_page_cb, onLaterPages=add_page_number)
+    size_kb = os.path.getsize(out) // 1024
+    print(f"PDF written: {out}  ({size_kb} KB)")
+
 
 if __name__ == "__main__":
     main()
