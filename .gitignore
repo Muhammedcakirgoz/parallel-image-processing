@@ -23,7 +23,10 @@ jmh-results.csv
 .DS_Store
 Thumbs.db
 
-# Generated demo images
+# Generated demo images (test outputs)
 *_Grayscale.png
 *_GaussianBlur5x5.png
 *_Sobel3x3.png
+
+# Speedup charts (report assets — keep these)
+!speedup_*.png

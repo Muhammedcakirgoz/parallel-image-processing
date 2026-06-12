@@ -73,7 +73,7 @@ def main():
             continue
         method = short_method(bench)
         try:
-            score = float(score)
+            score = float(score.replace(",", "."))
             size_i = int(size)
             threads_i = int(threads)
         except (TypeError, ValueError):
@@ -128,29 +128,67 @@ def main():
         import matplotlib.pyplot as plt
 
         filters = sorted({fname for (_, fname) in data.keys()})
+        colors = ["tab:blue", "tab:orange", "tab:green"]
+
+        # Per-filter: Executor vs ForkJoin, largest image only (2048)
         for fname in filters:
-            plt.figure(figsize=(7, 5))
+            fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharey=True)
+            fig.suptitle(f"Speedup vs Threads — {fname}", fontsize=13)
             sizes = sorted({size for (size, fn) in data.keys() if fn == fname})
-            for size in sizes:
-                methods = data[(size, fname)]
-                seq_scores = methods.get("sequential", {})
-                if not seq_scores:
-                    continue
-                seq_ms = seq_scores.get(1, next(iter(seq_scores.values())))
-                threads_sorted = sorted(methods.get("executorParallel", {}).keys())
-                speedups = [seq_ms / methods["executorParallel"][t]
-                            for t in threads_sorted]
-                plt.plot(threads_sorted, speedups, marker="o",
-                         label=f"{size}x{size}")
-            plt.plot([1, 8], [1, 8], "k--", alpha=0.4, label="ideal (linear)")
-            plt.title(f"Speedup vs Threads — {fname} (Executor)")
-            plt.xlabel("Thread count")
-            plt.ylabel("Speedup (T_seq / T_par)")
-            plt.legend()
-            plt.grid(True, alpha=0.3)
+
+            for ax, (method_key, method_label) in zip(
+                    axes,
+                    [("executorParallel", "ExecutorService"), ("forkJoinParallel", "ForkJoinPool")]):
+                for size, color in zip(sizes, colors):
+                    methods = data[(size, fname)]
+                    seq_scores = methods.get("sequential", {})
+                    if not seq_scores:
+                        continue
+                    seq_ms = seq_scores.get(1, next(iter(seq_scores.values())))
+                    threads_sorted = sorted(methods.get(method_key, {}).keys())
+                    if not threads_sorted:
+                        continue
+                    speedups = [seq_ms / methods[method_key][t] for t in threads_sorted]
+                    ax.plot(threads_sorted, speedups, marker="o", color=color,
+                            label=f"{size}x{size}")
+                ax.plot([1, 8], [1, 8], "k--", alpha=0.35, label="ideal")
+                ax.set_title(method_label)
+                ax.set_xlabel("Thread count")
+                ax.set_ylabel("Speedup (T_seq / T_par)")
+                ax.legend(fontsize=8)
+                ax.grid(True, alpha=0.3)
+
+            plt.tight_layout()
             out = f"speedup_{fname}.png"
             plt.savefig(out, dpi=120, bbox_inches="tight")
+            plt.close()
             print("Wrote", out)
+
+        # Combined: all filters on one chart (2048x2048, Executor)
+        plt.figure(figsize=(7, 5))
+        filter_colors = {"GaussianBlur5x5": "tab:red", "Sobel3x3": "tab:blue", "Grayscale": "tab:green"}
+        for fname in filters:
+            methods = data.get((2048, fname), {})
+            seq_scores = methods.get("sequential", {})
+            if not seq_scores:
+                continue
+            seq_ms = seq_scores.get(1, next(iter(seq_scores.values())))
+            threads_sorted = sorted(methods.get("executorParallel", {}).keys())
+            if not threads_sorted:
+                continue
+            speedups = [seq_ms / methods["executorParallel"][t] for t in threads_sorted]
+            plt.plot(threads_sorted, speedups, marker="o",
+                     color=filter_colors.get(fname, "gray"), label=fname)
+        plt.plot([1, 8], [1, 8], "k--", alpha=0.35, label="ideal (linear)")
+        plt.title("Speedup vs Threads — All Filters (2048×2048, Executor)")
+        plt.xlabel("Thread count")
+        plt.ylabel("Speedup (T_seq / T_par)")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        out = "speedup_combined.png"
+        plt.savefig(out, dpi=120, bbox_inches="tight")
+        plt.close()
+        print("Wrote", out)
     except ImportError:
         print("\n(matplotlib not installed — skipping charts. "
               "Install with: pip install matplotlib)")
